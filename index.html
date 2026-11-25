@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Учет выданного аванса</title>
+  <style>
+    :root {
+      --bg: #f3f5f4;
+      --card: #ffffff;
+      --primary: #1f6e43;
+      --primary-dark: #165231;
+      --primary-light: #e6f3ec;
+      --text: #18221d;
+      --muted: #607067;
+      --border: #dce4df;
+      --danger: #c93b3b;
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: var(--bg); color: var(--text); padding-bottom: 40px; }
+
+    header {
+      background: var(--primary);
+      color: #fff;
+      padding: 18px 16px 22px;
+      border-bottom-left-radius: 20px;
+      border-bottom-right-radius: 20px;
+      box-shadow: 0 4px 14px rgba(31, 110, 67, 0.2);
+    }
+    .header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+    .header-top h1 { font-size: 19px; font-weight: 700; }
+    .sync-badge {
+      font-size: 12px;
+      background: rgba(255,255,255,0.18);
+      padding: 5px 10px;
+      border-radius: 20px;
+      cursor: pointer;
+      border: none;
+      color: #fff;
+    }
+
+    .kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .kpi-card {
+      background: rgba(255, 255, 255, 0.14);
+      padding: 12px;
+      border-radius: 12px;
+    }
+    .kpi-card.full { grid-column: span 2; background: rgba(255, 255, 255, 0.22); }
+    .kpi-label { font-size: 12px; opacity: 0.9; margin-bottom: 4px; }
+    .kpi-value { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; }
+    .kpi-sub { font-size: 15px; font-weight: 700; }
+
+    .container { max-width: 640px; margin: 0 auto; padding: 14px; }
+
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 14px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      border: 1px solid var(--border);
+    }
+    .card-title { font-size: 16px; font-weight: 700; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .form-group { display: flex; flex-direction: column; gap: 4px; }
+    .form-group.full { grid-column: span 2; }
+    label { font-size: 12px; font-weight: 600; color: var(--muted); }
+    input {
+      width: 100%;
+      padding: 11px 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 15px;
+      background: #fafcfb;
+      color: var(--text);
+    }
+    input:focus { outline: none; border-color: var(--primary); background: #fff; }
+
+    .btn-primary {
+      width: 100%;
+      margin-top: 12px;
+      padding: 13px;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: 11px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .btn-primary:active { background: var(--primary-dark); }
+    .btn-primary:disabled { opacity: 0.6; }
+
+    .controls { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+    .filter-pills { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+    .pill {
+      padding: 7px 12px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    .pill.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+    .emp-item {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 13px 14px;
+      margin-bottom: 10px;
+      cursor: pointer;
+    }
+    .emp-main { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    .emp-name { font-size: 16px; font-weight: 700; }
+    .emp-meta { font-size: 12px; color: var(--muted); margin-top: 3px; display: flex; gap: 8px; align-items: center; }
+    .plate-badge {
+      background: var(--primary-light);
+      color: var(--primary-dark);
+      padding: 2px 7px;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 11px;
+    }
+    .emp-total {
+      font-size: 17px;
+      font-weight: 800;
+      color: var(--primary-dark);
+      white-space: nowrap;
+      text-align: right;
+    }
+    .bar-bg { height: 5px; background: #e9efec; border-radius: 4px; margin-top: 9px; overflow: hidden; }
+    .bar-fill { height: 100%; background: var(--primary); border-radius: 4px; transition: width 0.3s; }
+
+    .history {
+      display: none;
+      margin-top: 11px;
+      padding-top: 10px;
+      border-top: 1px dashed var(--border);
+    }
+    .emp-item.open .history { display: block; }
+    .hist-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+      font-size: 13px;
+      border-bottom: 1px solid #f2f5f3;
+    }
+    .hist-row:last-child { border-bottom: none; }
+    .del-btn {
+      background: none;
+      border: none;
+      color: var(--danger);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 6px;
+      cursor: pointer;
+    }
+
+    .empty { text-align: center; color: var(--muted); padding: 24px 10px; font-size: 14px; }
+    .setup-note {
+      background: #fff8e6;
+      border: 1px solid #f0d78c;
+      color: #6b5200;
+      padding: 10px 12px;
+      border-radius: 10px;
+      font-size: 12px;
+      margin-bottom: 12px;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-top">
+    <h1>Учет выданного аванса</h1>
+    <button class="sync-badge" id="syncBtn" onclick="loadFromCloud()">↻ Обновить</button>
+  </div>
+  <div class="kpi-grid">
+    <div class="kpi-card full">
+      <div class="kpi-label">Общая сумма выданного аванса</div>
+      <div class="kpi-value" id="totalAll">0 ₽</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Больше всех взял</div>
+      <div class="kpi-sub" id="topEarner">—</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Меньше всех взял</div>
+      <div class="kpi-sub" id="minEarner">—</div>
+    </div>
+  </div>
+</header>
+
+<div class="container">
+  <div id="setupBanner" class="setup-note" style="display:none;">
+    Режим локального хранения: вставьте ссылку Google Apps Script в переменную <b>API_URL</b> внутри <code>index.html</code>, чтобы включить синхронизацию с Google Таблицей.
+  </div>
+
+  <div class="card">
+    <div class="card-title">Новая выдача аванса</div>
+    <form id="advanceForm">
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="firstName">Имя</label>
+          <input type="text" id="firstName" list="namesList" placeholder="Например: Мурад" required />
+          <datalist id="namesList"></datalist>
+        </div>
+        <div class="form-group">
+          <label for="lastName">Фамилия</label>
+          <input type="text" id="lastName" list="lastNamesList" placeholder="Например: Алиев" required />
+          <datalist id="lastNamesList"></datalist>
+        </div>
+        <div class="form-group">
+          <label for="plate">Гос. номер комбайна</label>
+          <input type="text" id="plate" placeholder="А123ВС05" required />
+        </div>
+        <div class="form-group">
+          <label for="date">Дата выдачи</label>
+          <input type="date" id="date" required />
+        </div>
+        <div class="form-group full">
+          <label for="amount">Сумма аванса (₽)</label>
+          <input type="number" id="amount" inputmode="numeric" min="1" step="any" placeholder="5000" required />
+        </div>
+      </div>
+      <button type="submit" class="btn-primary" id="submitBtn">+ Выдать аванс</button>
+    </form>
+  </div>
+
+  <div class="controls">
+    <input type="search" id="searchInput" placeholder="Поиск по имени, фамилии или номеру комбайна..." oninput="render()" />
+    <div class="filter-pills">
+      <button class="pill active" data-sort="desc" onclick="setSort('desc', this)">Больше всех ↓</button>
+      <button class="pill" data-sort="asc" onclick="setSort('asc', this)">Меньше всех ↑</button>
+      <button class="pill" data-sort="recent" onclick="setSort('recent', this)">По дате выдачи</button>
+      <button class="pill" data-sort="alpha" onclick="setSort('alpha', this)">По алфавиту</button>
+    </div>
+  </div>
+
+  <div id="employeeList"></div>
+</div>
+
+<script>
+  // ВСТАВЬТЕ СЮДА URL ВЕБ-ПРИЛОЖЕНИЯ ИЗ GOOGLE APPS SCRIPT:
+  const API_URL = "AKfycbyIYwuTCz3AD9vWZIJkXmiY1R2BXCFSwQgvHM66BMqG0R_Xu6q1X76M_BK5rt8LFzsZ";
+
+  const STORAGE_KEY = "murad_advance_records_v1";
+  let records = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+  let currentSort = "desc";
+
+  // Установка сегодняшней даты по умолчанию
+  function setTodayDate() {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, "0");
+    const dd = String(today.getDate()).padStart(2, "0");
+    document.getElementById("date").value = `${yyyy}-${mm}-${dd}`;
+  }
+
+  function formatMoney(num) {
+    return new Intl.NumberFormat("ru-RU").format(Math.round(num)) + " ₽";
+  }
+
+  function setSort(mode, el) {
+    currentSort = mode;
+    document.querySelectorAll(".pill").forEach(p => p.classList.remove("active"));
+    el.classList.add("active");
+    render();
+  }
+
+  // Автоподстановка гос. номера комбайна при вводе уже знакомого сотрудника
+  function autofillPlate() {
+    const f = document.getElementById("firstName").value.trim().toLowerCase();
+    const l = document.getElementById("lastName").value.trim().toLowerCase();
+    if (!f || !l) return;
+    const found = [...records].reverse().find(r =>
+      r.firstName.toLowerCase() === f && r.lastName.toLowerCase() === l && r.plate
+    );
+    if (found && !document.getElementById("plate").value) {
+      document.getElementById("plate").value = found.plate;
+    }
+  }
+  document.getElementById("firstName").addEventListener("blur", autofillPlate);
+  document.getElementById("lastName").addEventListener("blur", autofillPlate);
+
+  async function loadFromCloud() {
+    if (!API_URL) {
+      document.getElementById("setupBanner").style.display = "block";
+      render();
+      return;
+    }
+    const btn = document.getElementById("syncBtn");
+    btn.textContent = "Синхронизация...";
+    try {
+      const res = await fetch(API_URL);
+      const data = await res.json();
+      if (data.status === "ok" && Array.isArray(data.records)) {
+        records = data.records;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+        render();
+      }
+      btn.textContent = "✓ Синхронизировано";
+      setTimeout(() => btn.textContent = "↻ Обновить", 2000);
+    } catch (e) {
+      btn.textContent = "⚠ Ошибка сети";
+      setTimeout(() => btn.textContent = "↻ Обновить", 2500);
+    }
+  }
+
+  document.getElementById("advanceForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById("submitBtn");
+    const newRecord = {
+      id: String(Date.now()),
+      firstName: document.getElementById("firstName").value.trim(),
+      lastName: document.getElementById("lastName").value.trim(),
+      plate: document.getElementById("plate").value.trim().toUpperCase(),
+      date: document.getElementById("date").value,
+      amount: Number(document.getElementById("amount").value)
+    };
+
+    records.push(newRecord);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+    render();
+
+    document.getElementById("amount").value = "";
+    setTodayDate();
+
+    if (API_URL) {
+      btn.disabled = true;
+      btn.textContent = "Сохранение в таблицу...";
+      try {
+        await fetch(API_URL, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "text/plain" },
+          body: JSON.stringify({ action: "add", ...newRecord })
+        });
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "+ Выдать аванс";
+      }
+    }
+  });
+
+  async function deleteRecord(id, event) {
+    event.stopPropagation();
+    if (!confirm("Удалить эту выдачу аванса?")) return;
+    records = records.filter(r => String(r.id) !== String(id));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+    render();
+
+    if (API_URL) {
+      await fetch(API_URL, {
+        method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({ action: "delete", id })
+      });
+    }
+  }
+
+  function render() {
+    const query = document.getElementById("searchInput").value.trim().toLowerCase();
+    const groups = {};
+
+    // Обновление подсказок для автозаполнения
+    const firstNames = new Set();
+    const lastNames = new Set();
+
+    records.forEach(r => {
+      firstNames.add(r.firstName);
+      lastNames.add(r.lastName);
+      const key = `${r.firstName.toLowerCase()}|${r.lastName.toLowerCase()}`;
+      if (!groups[key]) {
+        groups[key] = {
+          firstName: r.firstName,
+          lastName: r.lastName,
+          plate: r.plate,
+          total: 0,
+          latestDate: r.date,
+          items: []
+        };
+      }
+      if (r.plate) groups[key].plate = r.plate;
+      if (r.date > groups[key].latestDate) groups[key].latestDate = r.date;
+      groups[key].total += Number(r.amount) || 0;
+      groups[key].items.push(r);
+    });
+
+    document.getElementById("namesList").innerHTML = [...firstNames].map(n => `<option value="${n}">`).join("");
+    document.getElementById("lastNamesList").innerHTML = [...lastNames].map(n => `<option value="${n}">`).join("");
+
+    const allEmployees = Object.values(groups);
+    const totalAll = allEmployees.reduce((s, e) => s + e.total, 0);
+    document.getElementById("totalAll").textContent = formatMoney(totalAll);
+
+    if (allEmployees.length > 0) {
+      const byDesc = [...allEmployees].sort((a, b) => b.total - a.total);
+      document.getElementById("topEarner").textContent = `${byDesc[0].lastName} ${byDesc[0].firstName[0]}. (${formatMoney(byDesc[0].total)})`;
+      const minEmp = byDesc[byDesc.length - 1];
+      document.getElementById("minEarner").textContent = `${minEmp.lastName} ${minEmp.firstName[0]}. (${formatMoney(minEmp.total)})`;
+    } else {
+      document.getElementById("topEarner").textContent = "—";
+      document.getElementById("minEarner").textContent = "—";
+    }
+
+    let filtered = allEmployees.filter(emp => {
+      if (!query) return true;
+      const full = `${emp.firstName} ${emp.lastName} ${emp.plate}`.toLowerCase();
+      return full.includes(query);
+    });
+
+    if (currentSort === "desc") filtered.sort((a, b) => b.total - a.total);
+    if (currentSort === "asc") filtered.sort((a, b) => a.total - b.total);
+    if (currentSort === "recent") filtered.sort((a, b) => b.latestDate.localeCompare(a.latestDate));
+    if (currentSort === "alpha") filtered.sort((a, b) => a.lastName.localeCompare(b.lastName, "ru"));
+
+    const maxTotal = Math.max(...allEmployees.map(e => e.total), 1);
+    const listEl = document.getElementById("employeeList");
+
+    if (filtered.length === 0) {
+      listEl.innerHTML = `<div class="empty">Записей пока нет. Добавьте первую выдачу аванса выше.</div>`;
+      return;
+    }
+
+    listEl.innerHTML = filtered.map(emp => {
+      const pct = Math.round((emp.total / maxTotal) * 100);
+      const historyRows = [...emp.items]
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .map(item => `
+          <div class="hist-row">
+            <span>${item.date} • <b>${formatMoney(item.amount)}</b></span>
+            <button class="del-btn" onclick="deleteRecord('${item.id}', event)">Удалить</button>
+          </div>
+        `).join("");
+
+      return `
+        <div class="emp-item" onclick="this.classList.toggle('open')">
+          <div class="emp-main">
+            <div>
+              <div class="emp-name">${emp.lastName} ${emp.firstName}</div>
+              <div class="emp-meta">
+                <span class="plate-badge">${emp.plate || "Без номера"}</span>
+                <span>Выдач: ${emp.items.length}</span>
+              </div>
+            </div>
+            <div class="emp-total">${formatMoney(emp.total)}</div>
+          </div>
+          <div class="bar-bg"><div class="bar-fill" style="width:${pct}%"></div></div>
+          <div class="history">${historyRows}</div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  setTodayDate();
+  render();
+  loadFromCloud();
+</script>
+</body>
+</html>
