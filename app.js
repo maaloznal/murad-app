@@ -6,12 +6,13 @@
 
 /* ---------- Конфигурация ---------- */
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyIYwuTCz3AD9vWZIJkXmiY1R2BXCFSwQgvHM66BMqG0R_Xu6q1X76M_BK5rt8LFzsZ/exec";
-/* Ключ доступа к серверу. Должен совпадать с CONFIG.API_KEY в backend/Code.gs */
-const API_KEY = "avans_c954aac69ab341287cb6c23d2a46bf33";
+/* Секретов в публичном коде нет: код доступа вводит пользователь,
+   сервер проверяет его в CONFIG.USERS (backend/Code.gs) */
 
 const LS = {
   data: "avansData",
   ts: "avansTs",
+  auth: "avansAuth",
   theme: "avansTheme",
   ui: "avansUi",
   hideInstall: "avansHideInstall",
@@ -29,10 +30,11 @@ const state = {
   expanded: null,
   loading: false,
   submitting: false,
-  source: "loading", // script | sheet | cache | error | loading
+  source: "loading", // script | cache | error | loading
   canWrite: null,
   lastSync: null,
   helpShownOnce: false,
+  auth: { code: null, name: null },
 };
 
 /* ---------- Помощники ---------- */
@@ -159,6 +161,29 @@ function loadCache() {
   } catch (e) { return false; }
 }
 
+/* ---------- Авторизация ---------- */
+function loadAuth() {
+  try {
+    const a = JSON.parse(localStorage.getItem(LS.auth) || "null");
+    if (a && a.code) { state.auth = { code: String(a.code), name: a.name || null }; return true; }
+  } catch (e) { /* ignore */ }
+  return false;
+}
+function saveAuth() {
+  try { localStorage.setItem(LS.auth, JSON.stringify({ code: state.auth.code, name: state.auth.name })); } catch (e) { /* ignore */ }
+}
+function clearAuth() {
+  try {
+    localStorage.removeItem(LS.auth);
+    localStorage.removeItem(LS.data);
+    localStorage.removeItem(LS.ts);
+  } catch (e) { /* ignore */ }
+  state.auth = { code: null, name: null };
+  state.records = [];
+  state.lastSync = null;
+  state.canWrite = null;
+}
+
 /* ---------- API ---------- */
 async function fetchJson(url, opts, timeout) {
   const ctrl = new AbortController();
@@ -187,9 +212,12 @@ function normRec(r) {
 }
 
 async function scriptGet() {
-  const r = await fetchJson(SCRIPT_URL + "?t=" + Date.now() + "&key=" + encodeURIComponent(API_KEY));
+  if (!state.auth.code) throw new Error("AUTH");
+  const r = await fetchJson(SCRIPT_URL + "?t=" + Date.now() + "&key=" + encodeURIComponent(state.auth.code));
   if (r.json && r.json.code === "AUTH") throw new Error("AUTH");
+  if (r.json && r.json.status === "ok" && !r.json.user) throw new Error("OLDSERVER");
   if (!r.json || r.json.status !== "ok") throw new Error("script");
+  if (r.json.user) state.auth.name = r.json.user;
   return (r.json.records || []).map(normRec).filter(Boolean);
 }
 
@@ -197,7 +225,7 @@ async function scriptPost(payload) {
   const r = await fetchJson(SCRIPT_URL, {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify(Object.assign({ key: API_KEY }, payload)),
+    body: JSON.stringify(Object.assign({ key: state.auth.code || "" }, payload)),
   }, 25000);
   if (!r.json || r.json.status !== "ok") throw new Error((r.json && r.json.message) || "script");
   return r.json;
@@ -205,6 +233,7 @@ async function scriptPost(payload) {
 
 async function refresh() {
   if (state.loading) return;
+  if (!state.auth.code) { showLock(); return; }
   state.loading = true;
   $("#refreshBtn").classList.add("spin");
   renderSyncTime();
@@ -216,8 +245,9 @@ async function refresh() {
     saveCache();
   } catch (e) {
     if (e && e.message === "AUTH") {
-      state.source = "auth";
-      state.canWrite = false;
+      clearAuth();
+      state.source = "error";
+      showLock("Код доступа больше не действует. Войдите заново.");
     } else if (!state.records.length) state.source = "error";
     else state.source = "cache";
   } finally {
@@ -552,10 +582,11 @@ function toast(msg, type) {
 }
 
 /* ---------- Модальные окна ---------- */
-function confirmSheet(title, text) {
+function confirmSheet(title, text, okLabel) {
   return new Promise((resolve) => {
     $("#sheetTitle").textContent = title;
     $("#sheetText").textContent = text;
+    $("#sheetOk").textContent = okLabel || "Удалить";
     const bd = $("#backdrop"), sh = $("#sheet");
     bd.classList.add("show");
     sh.classList.add("show");
@@ -592,6 +623,74 @@ function confetti() {
     host.appendChild(s);
     setTimeout(() => s.remove(), 1000);
   }
+}
+
+/* ---------- Вход / выход ---------- */
+function showLock(message) {
+  const lock = $("#lockScreen");
+  if (!lock) return;
+  lock.classList.remove("hidden");
+  $("#lockError").textContent = message || "";
+  $("#lockCode").value = "";
+  setTimeout(() => { try { $("#lockCode").focus(); } catch (e) { /* ignore */ } }, 200);
+}
+function hideLock() {
+  const lock = $("#lockScreen");
+  if (lock) lock.classList.add("hidden");
+}
+function lockError(msg) {
+  $("#lockError").textContent = msg;
+  const input = $("#lockCode");
+  input.classList.add("invalid");
+  setTimeout(() => input.classList.remove("invalid"), 700);
+}
+
+async function login() {
+  if (state.submitting) return;
+  const code = String($("#lockCode").value || "").trim();
+  if (!code) { lockError("Введите код доступа"); return; }
+
+  state.submitting = true;
+  const btn = $("#lockBtn"), label = btn.querySelector("span");
+  btn.disabled = true;
+  label.textContent = "Проверяем…";
+  $("#lockError").textContent = "";
+  try {
+    state.auth = { code, name: null };
+    const recs = await scriptGet();
+    saveAuth();
+    hideLock();
+    state.records = recs;
+    state.source = "script";
+    state.canWrite = true;
+    state.lastSync = Date.now();
+    saveCache();
+    renderAll();
+    toast("Вы вошли" + (state.auth.name ? " как " + state.auth.name : "") + "!", "success");
+  } catch (e) {
+    state.auth = { code: null, name: null };
+    if (e && e.message === "AUTH") lockError("Неверный код доступа");
+    else if (e && e.message === "OLDSERVER") lockError("Сервер ещё без авторизации. Вставьте новый код из backend/Code.gs в Apps Script и разверните новую версию");
+    else lockError("Нет связи с сервером — проверьте интернет");
+  } finally {
+    state.submitting = false;
+    btn.disabled = false;
+    label.textContent = "Войти";
+  }
+}
+
+async function askLogout() {
+  const ok = await confirmSheet(
+    "Выйти из аккаунта?",
+    "Данные останутся на сервере" + (state.auth.name ? ". Вы вошли как " + state.auth.name : "") + ". Для входа понадобится код доступа.",
+    "Выйти"
+  );
+  if (!ok) return;
+  clearAuth();
+  state.source = "loading";
+  renderAll();
+  showLock();
+  toast("Вы вышли. Локальная копия данных удалена с устройства.", "info");
 }
 
 /* ---------- Действия ---------- */
@@ -787,6 +886,9 @@ function bind() {
     $("#statusBar").classList.add("hidden");
   };
 
+  $("#lockForm").addEventListener("submit", (ev) => { ev.preventDefault(); login(); });
+  $("#logoutBtn").onclick = askLogout;
+
   $("#helpClose").onclick = closeHelp;
   $("#helpRetry").onclick = () => { closeHelp(); refresh(); };
   $("#helpBackdrop").onclick = closeHelp;
@@ -953,9 +1055,9 @@ function bind() {
   $("#exportBtn").onclick = exportCsv;
 
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && state.lastSync && Date.now() - state.lastSync > 60000) refresh();
+    if (!document.hidden && state.auth.code && state.lastSync && Date.now() - state.lastSync > 60000) refresh();
   });
-  window.addEventListener("online", refresh);
+  window.addEventListener("online", () => { if (state.auth.code) refresh(); });
 }
 
 /* ---------- Инициализация ---------- */
@@ -977,8 +1079,15 @@ function bind() {
   initPtr();
   initSw();
 
-  const had = loadCache();
-  state.source = had ? "cache" : "loading";
-  renderAll();
-  refresh();
+  const hadAuth = loadAuth();
+  if (!hadAuth) {
+    state.source = "loading";
+    renderAll();
+    showLock();
+  } else {
+    const had = loadCache();
+    state.source = had ? "cache" : "loading";
+    renderAll();
+    refresh();
+  }
 })();

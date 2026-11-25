@@ -2,24 +2,24 @@
  * ============================================================
  * УЧЁТ ВЫДАННОГО АВАНСА — защищённый бэкенд (Google Apps Script)
  *
- * Что нового по сравнению со старой версией:
- *  1. API-ключ: любой запрос doGet/doPost обязан передать ?key=...
- *     (или поле "key" в JSON). Без ключа — отказ. Это отсекает ботов
- *     и всех, кто просто нашёл ссылку.
- *  2. Проверка данных: лимиты длины, диапазон суммы, формат даты —
- *     мусор в таблицу записать нельзя.
- *  3. Лимит запросов в час — защита от заливки и подбора.
- *  4. Лист «Журнал»: фиксируется каждое добавление/удаление —
- *     удалённое всегда можно восстановить руками.
- *  5. Резервные копии: ежедневные копии листа «Выдачи» в листы
- *     «Резерв …» (хранятся последние 14).
- *  6. Защита листов от редактирования чужими руками.
+ * АВТОРИЗАЦИЯ: вход по личным кодам доступа (CONFIG.USERS ниже).
+ * Пользователь вводит код в приложении — сервер проверяет его.
+ * Без правильного кода данные не читаются и не меняются.
+ * Коды живут ТОЛЬКО здесь — в публичном коде приложения их нет.
+ * Никаких сторонних сервисов не используется.
+ *
+ * Плюс защита данных:
+ *  1. Проверка данных: лимиты длины, диапазон суммы, формат даты
+ *  2. Лимит запросов в час + замедление перебора кодов
+ *  3. Лист «Журнал»: кто и когда выдал/удалил (аудит по имени)
+ *  4. Резервные копии: ежедневные копии листа «Выдачи» (последние 14)
+ *  5. Защита листов от редактирования чужими руками
  *
  * УСТАНОВКА (5 минут):
  *  1. Расширения → Apps Script → выделить весь старый код → удалить →
  *     вставить этот файл → Сохранить.
- *  2. В CONFIG ниже проверьте API_KEY — он должен совпадать со
- *     значением API_KEY в app.js приложения (github.com/maaloznal/murad-app).
+ *  2. В CONFIG.USERS задайте своё имя и код (или добавьте сотрудников
+ *     по образцу). Коды придумайте свои — эти примеры не используйте.
  *  3. Выполните один раз функцию installDailyBackup (выпадающий список
  *     функций → «installDailyBackup» → «Выполнить») — создаст триггер
  *     ежедневного бэкапа в 3 часа ночи и защитит листы.
@@ -31,12 +31,20 @@
  *     (убрать «Все, у кого есть ссылка»). Если таблица публиковалась
  *     в интернет (Файл → «Опубликовать в интернете») — остановить
  *     публикацию. Скрипт работает от вашего имени и продолжит писать.
+ *
+ * КАК ДОБАВИТЬ СОТРУДНИКА: добавьте строку в USERS и разверните новую
+ * версию. КАК ОТЗВАТЬ ДОСТУП: удалите пользователя или смените ему код
+ * и разверните новую версию.
  * ============================================================
  */
 
 var CONFIG = {
-  // Секретный ключ доступа. Совпадает с API_KEY в app.js.
-  API_KEY: 'avans_c954aac69ab341287cb6c23d2a46bf33',
+  // Пользователи и их личные коды доступа.
+  USERS: [
+    { name: 'Владелец', code: 'avans-3af0963d' },
+    // { name: 'Марат', code: 'avans-b53efe25' },
+    // { name: 'Ещё сотрудник', code: 'придумайте-свой-код' },
+  ],
 
   SHEET_LOG: 'Выдачи',
   SHEET_SUM: 'Сводка',
@@ -57,9 +65,10 @@ var CONFIG = {
 
 function doGet(e) {
   try {
-    if (!authorized(e, null)) return fail('AUTH', 'Неверный ключ доступа');
+    var user = findUser(e, null);
+    if (!user) { authFail(); return fail('AUTH', 'Неверный код доступа'); }
     rateLimit('read');
-    return json({ status: 'ok', records: readRecords() });
+    return json({ status: 'ok', user: user.name, records: readRecords() });
   } catch (err) {
     return fail('ERR', safeMsg(err));
   }
@@ -68,23 +77,45 @@ function doGet(e) {
 function doPost(e) {
   var body = getBody(e);
   try {
-    if (!authorized(e, body)) return fail('AUTH', 'Неверный ключ доступа');
+    var user = findUser(e, body);
+    if (!user) { authFail(); return fail('AUTH', 'Неверный код доступа'); }
     rateLimit('write');
 
     var action = String(body.action || '');
-    if (action === 'add') return doAdd(body);
-    if (action === 'delete') return doDelete(body);
+    if (action === 'add') return doAdd(body, user);
+    if (action === 'delete') return doDelete(body, user);
     return fail('ARGS', 'Неизвестное действие');
   } catch (err) {
     return fail('ERR', safeMsg(err));
   }
 }
 
-/* ==================== Ключ доступа ==================== */
+/* ==================== Авторизация ==================== */
 
-function authorized(e, body) {
+function findUser(e, body) {
   var k = String((e && e.parameter && e.parameter.key) || (body && body.key) || '');
-  return k.length > 0 && k === CONFIG.API_KEY;
+  if (!k) return null;
+  for (var i = 0; i < CONFIG.USERS.length; i++) {
+    if (CONFIG.USERS[i].code && k === CONFIG.USERS[i].code) return CONFIG.USERS[i];
+  }
+  return null;
+}
+
+/** Неудачные попытки входа: считаем и замедляем перебор кодов. */
+function authFail() {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var bucket = 'authfail_' + new Date().getHours();
+    var count = Number(props.getProperty(bucket) || '0') + 1;
+    props.setProperty(bucket, String(count));
+    if (count === 1) {
+      var all = props.getProperties();
+      for (var k in all) {
+        if (/^authfail_\d+$/.test(k) && k !== bucket) props.deleteProperty(k);
+      }
+    }
+    if (count > 5) Utilities.sleep(3000); // после 5 промахов за час — каждая попытка +3 сек
+  } catch (ignore) { /* не ломаем ответ из-за счётчика */ }
 }
 
 function getBody(e) {
@@ -211,7 +242,7 @@ function readRecords() {
 
 /* ==================== Добавление ==================== */
 
-function doAdd(body) {
+function doAdd(body, user) {
   var firstName = cleanText(body.firstName, CONFIG.MAX_NAME_LEN);
   var lastName = cleanText(body.lastName, CONFIG.MAX_NAME_LEN);
   var plate = cleanText(body.plate, CONFIG.MAX_PLATE_LEN).toUpperCase();
@@ -228,7 +259,7 @@ function doAdd(body) {
   try {
     logSheet().appendRow([id, date, firstName, lastName, plate, amount]);
     rebuildSummary();
-    audit('Выдано: ' + lastName + ' ' + firstName +
+    audit(who(user) + 'Выдано: ' + lastName + ' ' + firstName +
       (plate ? ', № ' + plate : '') + ' — ' + amount + ' ₽ (' + date + ')', id);
   } finally {
     lock.releaseLock();
@@ -238,7 +269,7 @@ function doAdd(body) {
 
 /* ==================== Удаление ==================== */
 
-function doDelete(body) {
+function doDelete(body, user) {
   var id = cleanText(body.id, CONFIG.MAX_ID_LEN);
   if (!id) return fail('ARGS', 'Не указан ID записи');
 
@@ -255,7 +286,7 @@ function doDelete(body) {
         if (String(values[i][0]).trim() === id) {
           var row = values[i];
           var ds = toIsoDate(row[1]) || String(row[1] || '');
-          audit('Удалено: ' + row[3] + ' ' + row[2] +
+          audit(who(user) + 'Удалено: ' + row[3] + ' ' + row[2] +
             (row[4] ? ', № ' + row[4] : '') + ' — ' + (Math.round(Number(row[5]) || 0)) +
             ' ₽ (' + ds + '). Строку можно восстановить из листа «Резерв»', id);
           sh.deleteRow(first + i);
@@ -310,6 +341,10 @@ function rebuildSummary() {
 }
 
 /* ==================== Журнал действий ==================== */
+
+function who(user) {
+  return user && user.name ? user.name + ': ' : '';
+}
 
 function audit(text, refId) {
   try {

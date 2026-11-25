@@ -22,6 +22,19 @@
 
 <div id="ptr" class="ptr" aria-hidden="true"><span class="ptr-spin"></span></div>
 
+<!-- ЭКРАН ВХОДА (показывается без сохранённого кода доступа) -->
+<div id="lockScreen" class="lockscreen hidden" role="dialog" aria-modal="true" aria-labelledby="lockTitle">
+  <form class="lock-card" id="lockForm" novalidate>
+    <div class="lock-logo" aria-hidden="true">₽</div>
+    <h1 id="lockTitle">Учет выданного аванса</h1>
+    <p class="lock-sub">Введите код доступа</p>
+    <input id="lockCode" type="password" autocomplete="off" placeholder="Код доступа" maxlength="60" aria-label="Код доступа">
+    <button type="submit" class="btn-primary lock-btn" id="lockBtn"><span>Войти</span></button>
+    <p class="lock-error" id="lockError" role="alert"></p>
+    <p class="lock-note">Код доступа выдаёт владелец. Данные хранятся на сервере и без кода недоступны.</p>
+  </form>
+</div>
+
 <div id="statusBar" class="statusbar hidden" role="alert">
   <div class="statusbar-icon" id="statusIcon"></div>
   <div class="statusbar-text">
@@ -37,6 +50,9 @@
 <header class="topbar">
   <div class="logo" aria-hidden="true">₽</div>
   <div class="topbar-title">Учет выданного аванса</div>
+  <button id="logoutBtn" class="icon-btn" type="button" aria-label="Выйти из аккаунта">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
+  </button>
   <button id="themeBtn" class="icon-btn" type="button" aria-label="Переключить тему">
     <svg class="ic-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
     <svg class="ic-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
@@ -205,7 +221,7 @@
   <p class="help-note">Сервер отклонил запросы приложения. Скорее всего, обновляется защита данных или ключи не совпадают. Что проверить:</p>
   <ol class="help-steps">
     <li>В Apps Script стоит <b>новый код из backend/Code.gs</b> (репозиторий murad-app на GitHub)</li>
-    <li>Значение <b>CONFIG.API_KEY</b> в Apps Script совпадает с <b>API_KEY</b> в app.js</li>
+    <li>В <b>CONFIG.USERS</b> в Apps Script есть пользователь с вашим кодом доступа</li>
     <li>Развертывание обновлено: <b>«Развернуть» → «Управление развертываниями» → карандаш → «Новая версия»</b></li>
     <li>Доступ к таблице — <b>«Ограниченный»</b>: скрипт работает от имени владельца и продолжит писать</li>
   </ol>
