@@ -1,5 +1,5 @@
 /* Service Worker: кэширует оболочку приложения для офлайн-работы */
-const CACHE = "avans-v3";
+const CACHE = "avans-v4";
 const ASSETS = [
   "./",
   "./index.html",

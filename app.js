@@ -7,7 +7,7 @@
 /* ---------- Конфигурация ---------- */
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyIYwuTCz3AD9vWZIJkXmiY1R2BXCFSwQgvHM66BMqG0R_Xu6q1X76M_BK5rt8LFzsZ/exec";
 /* Секретов в публичном коде нет: код доступа вводит пользователь,
-   сервер проверяет его в CONFIG.USERS (backend/Code.gs) */
+   сервер проверяет его в CONFIG.USERS (редактор Apps Script таблицы) */
 
 const LS = {
   data: "avansData",
@@ -670,7 +670,7 @@ async function login() {
   } catch (e) {
     state.auth = { code: null, name: null };
     if (e && e.message === "AUTH") lockError("Неверный код доступа");
-    else if (e && e.message === "OLDSERVER") lockError("Сервер ещё без авторизации. Вставьте новый код из backend/Code.gs в Apps Script и разверните новую версию");
+    else if (e && e.message === "OLDSERVER") lockError("Сервер ещё без авторизации. Обновите код в Apps Script таблицы (Расширения → Apps Script) и разверните новую версию");
     else lockError("Нет связи с сервером — проверьте интернет");
   } finally {
     state.submitting = false;
