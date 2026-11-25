@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Учет выданного аванса</title>
 <meta name="description" content="Учет выданных авансов сотрудникам: дашборд, статистика, журнал и экспорт. Работает офлайн.">
+<meta name="robots" content="noindex, nofollow">
 <meta name="theme-color" content="#F4F7F5" id="metaTheme">
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" type="image/svg+xml" href="./icons/favicon.svg">
@@ -200,15 +201,15 @@
 <div class="backdrop" id="helpBackdrop"></div>
 <div class="sheet sheet-help" id="helpSheet" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
   <div class="sheet-grip" aria-hidden="true"></div>
-  <h3 id="helpTitle">Включить сохранение в таблицу</h3>
-  <p class="help-note">Таблица уже подключена — приложение читает из неё данные. Чтобы заработали кнопки «Выдать» и «Удалить», откройте веб-приложению доступ «Все»:</p>
+  <h3 id="helpTitle">Нет доступа к серверу данных</h3>
+  <p class="help-note">Сервер отклонил запросы приложения. Скорее всего, обновляется защита данных или ключи не совпадают. Что проверить:</p>
   <ol class="help-steps">
-    <li>Откройте <b>script.google.com</b> → ваш проект с кодом <b>doGet / doPost</b></li>
-    <li>Нажмите <b>«Развернуть» → «Управление развертываниями»</b></li>
-    <li>Нажмите <b>карандаш</b> рядом с активным развертыванием</li>
-    <li>«Кто имеет доступ»: выберите <b>«Все»</b></li>
-    <li>Нажмите <b>«Развернуть»</b> — ссылка останется прежней</li>
+    <li>В Apps Script стоит <b>новый код из backend/Code.gs</b> (репозиторий murad-app на GitHub)</li>
+    <li>Значение <b>CONFIG.API_KEY</b> в Apps Script совпадает с <b>API_KEY</b> в app.js</li>
+    <li>Развертывание обновлено: <b>«Развернуть» → «Управление развертываниями» → карандаш → «Новая версия»</b></li>
+    <li>Доступ к таблице — <b>«Ограниченный»</b>: скрипт работает от имени владельца и продолжит писать</li>
   </ol>
+  <p class="help-note">Данные в любом случае не теряются: пока нет связи, приложение показывает последнюю сохранённую копию на устройстве.</p>
   <div class="sheet-actions">
     <button class="btn-ghost" id="helpRetry" type="button">Проверить снова</button>
     <button class="btn-primary sm" id="helpClose" type="button">Понятно</button>

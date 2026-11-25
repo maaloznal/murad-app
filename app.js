@@ -1,13 +1,13 @@
 /* ============================================================
    Учет выданного аванса — логика приложения
-   Данные: Google Apps Script (запись) + Google Таблица (резерв чтения)
+   Данные: Google Apps Script Web App (защищён ключом доступа)
    ============================================================ */
 "use strict";
 
 /* ---------- Конфигурация ---------- */
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyIYwuTCz3AD9vWZIJkXmiY1R2BXCFSwQgvHM66BMqG0R_Xu6q1X76M_BK5rt8LFzsZ/exec";
-const SHEET_ID = "17dFI215E4jyEtyZBXIbs6WNYPfWuThlqU_sQv6bippQ";
-const GVIZ_URL = "https://docs.google.com/spreadsheets/d/" + SHEET_ID + "/gviz/tq?tqx=out:json&sheet=" + encodeURIComponent("Выдачи");
+/* Ключ доступа к серверу. Должен совпадать с CONFIG.API_KEY в backend/Code.gs */
+const API_KEY = "avans_c954aac69ab341287cb6c23d2a46bf33";
 
 const LS = {
   data: "avansData",
@@ -89,7 +89,9 @@ function parseAmount(v) {
   return isNaN(n) ? 0 : n;
 }
 function friendlyErr(e) {
-  return e && e.name === "AbortError" ? "превышено время ожидания" : "нет связи с сервером";
+  if (e && e.name === "AbortError") return "превышено время ожидания";
+  if (e && e.message && e.message !== "script" && e.message !== "AUTH") return e.message; // текст от сервера
+  return "нет связи с сервером";
 }
 
 /* ---------- Иконки ---------- */
@@ -185,43 +187,17 @@ function normRec(r) {
 }
 
 async function scriptGet() {
-  const r = await fetchJson(SCRIPT_URL + "?t=" + Date.now());
+  const r = await fetchJson(SCRIPT_URL + "?t=" + Date.now() + "&key=" + encodeURIComponent(API_KEY));
+  if (r.json && r.json.code === "AUTH") throw new Error("AUTH");
   if (!r.json || r.json.status !== "ok") throw new Error("script");
   return (r.json.records || []).map(normRec).filter(Boolean);
-}
-
-function gvizDate(v) {
-  if (v == null || v === "") return "";
-  if (typeof v === "string") {
-    const m = v.match(/^Date\((\d+),(\d+),(\d+)/);
-    if (m) return iso(new Date(+m[1], +m[2], +m[3]));
-    return v.trim();
-  }
-  return iso(new Date(v));
-}
-
-async function gvizGet() {
-  const r = await fetchJson(GVIZ_URL);
-  let data = r.json;
-  if (!data && r.text && r.text.indexOf("setResponse(") !== -1) {
-    data = JSON.parse(r.text.slice(r.text.indexOf("{"), r.text.lastIndexOf("}") + 1));
-  }
-  if (!data || !data.table || !data.table.rows) throw new Error("gviz");
-  const out = [];
-  for (const row of data.table.rows) {
-    const c = (row.c || []).map((x) => (x == null ? "" : x.v != null ? x.v : x.f != null ? x.f : ""));
-    if (String(c[0]).trim() === "ID" || String(c[2]).trim() === "Имя") continue; // строка заголовков
-    const rec = normRec({ id: c[0], date: gvizDate(c[1]), firstName: c[2], lastName: c[3], plate: c[4], amount: parseAmount(c[5]) });
-    if (rec) out.push(rec);
-  }
-  return out;
 }
 
 async function scriptPost(payload) {
   const r = await fetchJson(SCRIPT_URL, {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(Object.assign({ key: API_KEY }, payload)),
   }, 25000);
   if (!r.json || r.json.status !== "ok") throw new Error((r.json && r.json.message) || "script");
   return r.json;
@@ -233,21 +209,16 @@ async function refresh() {
   $("#refreshBtn").classList.add("spin");
   renderSyncTime();
   try {
-    let recs = null;
-    try {
-      recs = await scriptGet();
-      state.source = "script";
-      state.canWrite = true;
-    } catch (err) {
-      recs = await gvizGet();
-      state.source = "sheet";
-      state.canWrite = false;
-    }
-    state.records = recs;
+    state.records = await scriptGet();
+    state.source = "script";
+    state.canWrite = true;
     state.lastSync = Date.now();
     saveCache();
   } catch (e) {
-    if (!state.records.length) state.source = "error";
+    if (e && e.message === "AUTH") {
+      state.source = "auth";
+      state.canWrite = false;
+    } else if (!state.records.length) state.source = "error";
     else state.source = "cache";
   } finally {
     state.loading = false;
@@ -314,7 +285,7 @@ function renderSyncTime() {
 function renderBadges() {
   const badge = $("#sourceBadge"), txt = $("#sourceText");
   if (state.source === "script") { badge.className = "hero-badge"; txt.textContent = "онлайн"; }
-  else if (state.source === "sheet") { badge.className = "hero-badge read"; txt.textContent = "чтение"; }
+  else if (state.source === "auth") { badge.className = "hero-badge off"; txt.textContent = "нет доступа"; }
   else if (state.source === "loading") { badge.className = "hero-badge off"; txt.textContent = "…"; }
   else { badge.className = "hero-badge off"; txt.textContent = "офлайн"; }
 }
@@ -323,11 +294,11 @@ function renderStatus() {
   const bar = $("#statusBar");
   let hide = false;
   try { hide = !!sessionStorage.getItem("avansHideStatus"); } catch (e) { /* ignore */ }
-  if (state.source === "sheet" && !hide) {
+  if (state.source === "auth") {
     bar.classList.remove("hidden", "offline");
-    $("#statusTitle").textContent = "Запись в таблицу недоступна";
-    $("#statusText").textContent = "Данные читаются напрямую из Google-таблицы. Откройте доступ «Все» в Apps Script, чтобы сохранять выдачи.";
-    $("#statusAction").textContent = "Как включить";
+    $("#statusTitle").textContent = "Сервер отклонил ключ доступа";
+    $("#statusText").textContent = "Ключ API_KEY в приложении не совпадает с CONFIG.API_KEY в Apps Script. Проверьте оба места (инструкция — в README на GitHub).";
+    $("#statusAction").textContent = "Повторить";
     $("#statusIcon").innerHTML = ICON.alert;
   } else if (state.source === "cache" || state.source === "error") {
     bar.classList.remove("hidden");
@@ -811,9 +782,8 @@ function bind() {
     localStorage.setItem(LS.theme, next);
   };
 
-  $("#statusAction").onclick = () => { if (state.source === "sheet") openHelp(); else refresh(); };
+  $("#statusAction").onclick = () => refresh();
   $("#statusClose").onclick = () => {
-    if (state.source === "sheet") { try { sessionStorage.setItem("avansHideStatus", "1"); } catch (e) { /* ignore */ } }
     $("#statusBar").classList.add("hidden");
   };
 
