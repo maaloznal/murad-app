@@ -512,9 +512,13 @@ function renderLog() {
     .slice()
     .sort((a, b) => (b.date || "").localeCompare(a.date || "") || String(b.id).localeCompare(String(a.id)));
   const sum = recs.reduce((s, r) => s + r.amount, 0);
-  $("#logSummary").textContent = recs.length
-    ? recs.length + " " + plural(recs.length, ["выдача", "выдачи", "выдач"]) + " · " + fmtMoney(sum)
-    : "";
+  const sumEl = $("#logSummary");
+  if (recs.length) {
+    sumEl.textContent = recs.length + " " + plural(recs.length, ["выдача", "выдачи", "выдач"]) + " · " + fmtMoney(sum);
+    sumEl.classList.remove("hidden");
+  } else {
+    sumEl.classList.add("hidden");
+  }
   const listEl = $("#logList");
   const emptyEl = $("#logEmpty");
   if ((state.loading || state.source === "loading") && !state.records.length) {
