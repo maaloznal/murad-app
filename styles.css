@@ -56,6 +56,8 @@ html.dark {
   --shadow-sm: 0 5px 16px rgba(0, 0, 0, 0.45);
 }
 
+html { scroll-padding-bottom: calc(130px + env(safe-area-inset-bottom)); scroll-padding-top: calc(70px + env(safe-area-inset-top)); }
+
 html, body { margin: 0; padding: 0; }
 
 body {
